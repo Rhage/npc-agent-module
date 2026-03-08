@@ -27,7 +27,7 @@ new Dialog({
                     game.npcAgent.sendMessage(player, profile, message);
                 } else {
                     // Players route through Foundry socket to GM
-					console.log(`${MODULE_ID} | Emitting socket event...`, { player, profile, message });
+                    console.log(`${MODULE_ID} | Emitting socket event...`, { player, profile, message });
                     game.socket.emit(`module.${MODULE_ID}`, {
                         player,
                         profile,
