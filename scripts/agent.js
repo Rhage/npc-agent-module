@@ -59,18 +59,29 @@ class NPCAgent {
         }
     }
 
-    handleMessage(data) {
-        if (data.type === "agent_response") {
-            ChatMessage.create({
-                content: data.response,
-                speaker: { alias: data.speaker ?? "NPC" }
-            });
-        }
+	handleMessage(data) {
+		if (data.type === "agent_response") {
+			const actor = game.actors.getName(data.profile);
+			const targetUser = game.users.find(u => u.name === data.player);
+			const formatted = data.response.replace(/\n/g, "<br>");
+			
+			console.log(data.profile);
+			ChatMessage.create({
+				content: formatted,
+				type: CONST.CHAT_MESSAGE_TYPES.IC,
+				user: targetUser?.id ?? game.user.id,
+				speaker: actor
+					? ChatMessage.getSpeaker({ actor: actor })
+					: { alias: data.profile }
+			},{
+				chatBubble: true
+			});
+		}
 
-        if (data.type === "error") {
-            ui.notifications.error(`NPC Agent: ${data.detail}`);
-        }
-    }
+		if (data.type === "error") {
+			ui.notifications.error(`NPC Agent: ${data.detail}`);
+		}
+	}
 
     sendMessage(player, profile, message) {
         if (!this.connected) {
