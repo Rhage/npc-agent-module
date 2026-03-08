@@ -1,0 +1,20 @@
+{
+    "id": "npc-agent",
+    "title": "NPC Agent",
+    "description": "Connects FoundryVTT to a local LLM-powered NPC agent.",
+    "version": "0.1.0",
+    "compatibility": {
+        "minimum": "12",
+        "verified": "12"
+    },
+    "authors": [
+        {
+            "name": "Your Name"
+        }
+    ],
+    "esmodules": [
+        "scripts/agent.js"
+    ],
+    "socket": true,
+    "flags": {}
+}

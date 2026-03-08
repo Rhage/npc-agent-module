@@ -1,0 +1,46 @@
+const MODULE_ID = "npc-agent";
+const player    = game.user.name;
+const profile   = "riko";
+
+new Dialog({
+    title: "Talk to NPC",
+    content: `
+        <div style="margin-bottom: 8px;">
+            <label>Message</label>
+            <textarea id="npc-message" rows="4"
+                style="width:100%; margin-top:4px;"
+                placeholder="What do you say?"></textarea>
+        </div>
+    `,
+    buttons: {
+        send: {
+            label: "Send",
+            callback: (html) => {
+                const message = html.find("#npc-message").val().trim();
+                if (!message) {
+                    ui.notifications.warn("Please enter a message.");
+                    return;
+                }
+
+                if (game.user.isGM) {
+                    // GM sends directly
+                    game.npcAgent.sendMessage(player, profile, message);
+                } else {
+                    // Players route through Foundry socket to GM
+					console.log(`${MODULE_ID} | Emitting socket event...`, { player, profile, message });
+                    game.socket.emit(`module.${MODULE_ID}`, {
+                        player,
+                        profile,
+                        message
+                    });
+                }
+
+                ui.notifications.info("Message sent. Waiting for response...");
+            }
+        },
+        cancel: {
+            label: "Cancel"
+        }
+    },
+    default: "send"
+}).render(true);
