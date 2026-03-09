@@ -12,9 +12,12 @@
             "name": "Your Name"
         }
     ],
-    "esmodules": [
-        "scripts/agent.js"
-    ],
+	"esmodules": [
+		"scripts/constants.js",
+		"scripts/connection-manager.js",
+		"scripts/dialog.js",
+		"scripts/agent.js"
+	],
     "socket": true,
     "flags": {}
 }

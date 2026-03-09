@@ -1,15 +1,15 @@
-const MODULE_ID = "npc-agent";
-const SOCKET_ID = `module.${MODULE_ID}`;
+import { MODULE_ID, SOCKET_ID } from "./constants.js";
+import { NPCAgentConnectionManager } from "./connection-manager.js";
+import { NPCAgentDialog } from "./dialog.js";
 
 class NPCAgent {
     constructor() {
-        this.ws          = null;
-        this.connected   = false;
-        this.manualStop  = false;  // tracks intentional stops via dialog
+        this.ws         = null;
+        this.connected  = false;
+        this.manualStop = false;
     }
 
     connect() {
-        // Don't connect if manually stopped
         if (this.manualStop) return;
 
         const url = game.settings.get(MODULE_ID, "serverUrl");
@@ -26,8 +26,6 @@ class NPCAgent {
             this.connected = false;
             console.log(`${MODULE_ID} | Disconnected.`);
 
-            // Only auto-reconnect if not manually stopped
-            // and Auto Reconnect setting is enabled
             if (!this.manualStop && game.settings.get(MODULE_ID, "autoReconnect")) {
                 console.log(`${MODULE_ID} | Auto reconnecting in 5s...`);
                 setTimeout(() => this.connect(), 5000);
@@ -59,29 +57,28 @@ class NPCAgent {
         }
     }
 
-	handleMessage(data) {
-		if (data.type === "agent_response") {
-			const actor = game.actors.getName(data.profile);
-			const targetUser = game.users.find(u => u.name === data.player);
-			const formatted = data.response.replace(/\n/g, "<br>");
-			
-			console.log(data.profile);
-			ChatMessage.create({
-				content: formatted,
-				type: CONST.CHAT_MESSAGE_TYPES.IC,
-				user: targetUser?.id ?? game.user.id,
-				speaker: actor
-					? ChatMessage.getSpeaker({ actor: actor })
-					: { alias: data.profile }
-			},{
-				chatBubble: true
-			});
-		}
+    handleMessage(data) {
+        if (data.type === "agent_response") {
+            const actor      = game.actors.getName(data.profile);
+            const targetUser = game.users.find(u => u.name === data.player);
+            const formatted  = data.response.replace(/\n/g, "<br>");
 
-		if (data.type === "error") {
-			ui.notifications.error(`NPC Agent: ${data.detail}`);
-		}
-	}
+            ChatMessage.create({
+                content: formatted,
+                type:    CONST.CHAT_MESSAGE_TYPES.IC,
+                user:    targetUser?.id ?? game.user.id,
+                speaker: actor
+                    ? ChatMessage.getSpeaker({ actor })
+                    : { alias: data.profile }
+            }, {
+                chatBubble: true
+            });
+        }
+
+        if (data.type === "error") {
+            ui.notifications.error(`NPC Agent: ${data.detail}`);
+        }
+    }
 
     sendMessage(player, profile, message) {
         if (!this.connected) {
@@ -91,60 +88,20 @@ class NPCAgent {
 
         this.ws.send(JSON.stringify({
             type:    "player_message",
-            player:  player,
-            profile: profile,
-            message: message
+            player,
+            profile,
+            message
         }));
     }
-}
 
-// ── Connection Manager Dialog ──
-class NPCAgentConnectionManager extends FormApplication {
-    static get defaultOptions() {
-        return foundry.utils.mergeObject(super.defaultOptions, {
-            id:     "npc-agent-connection-manager",
-            title:  "NPC Agent — Connection",
-            width:  380,
-            height: "auto"
-        });
+    openDialog(profile) {
+        const existing = Object.values(ui.windows).find(w => w.id === "npc-agent-dialog");
+        if (existing) {
+            existing.bringToTop();
+            return;
+        }
+        new NPCAgentDialog(profile).render(true);
     }
-
-    async _renderInner() {
-        const connected = game.npcAgent?.connected ?? false;
-        const status    = connected
-            ? `<span style="color:#27ae60;">● Connected</span>`
-            : `<span style="color:#c0392b;">● Disconnected</span>`;
-
-        const $html = $(`
-            <div style="padding: 8px 4px;">
-                <p style="margin-bottom: 16px;">
-                    <strong>Status:</strong> ${status}
-                </p>
-                <div style="display:flex; gap:8px;">
-                    <button id="npc-btn-start"  ${connected  ? 'disabled' : ''}>
-                        <i class="fas fa-plug"></i> Start
-                    </button>
-                    <button id="npc-btn-stop" ${!connected ? 'disabled' : ''}>
-                        <i class="fas fa-power-off"></i> Stop
-                    </button>
-                </div>
-            </div>
-        `);
-
-        $html.find("#npc-btn-start").click(() => {
-            game.npcAgent.start();
-            setTimeout(() => this.render(), 600);
-        });
-
-        $html.find("#npc-btn-stop").click(() => {
-            game.npcAgent.stop();
-            setTimeout(() => this.render(), 300);
-        });
-
-        return $html;
-    }
-
-    async _updateObject() {}
 }
 
 // ── Settings ──
@@ -175,26 +132,26 @@ Hooks.once("init", () => {
         type:       NPCAgentConnectionManager,
         restricted: true
     });
-	
-	game.settings.register(MODULE_ID, "shortPauseMs", {
-		name:  "Short Pause Duration (ms)",
-		hint:  "Milliseconds of silence before inserting a period. Default: 1500",
-		scope: "client",   // client scope = per player, not shared
-		config: true,
-		type:  Number,
-		default: 1500,
-		range: { min: 500, max: 5000, step: 100 }
-	});
 
-	game.settings.register(MODULE_ID, "longPauseMs", {
-		name:  "Long Pause Duration (ms)",
-		hint:  "Milliseconds of silence before inserting a paragraph break. Default: 3000",
-		scope: "client",
-		config: true,
-		type:  Number,
-		default: 3000,
-		range: { min: 1000, max: 10000, step: 100 }
-	});
+    game.settings.register(MODULE_ID, "shortPauseMs", {
+        name:    "Short Pause Duration (ms)",
+        hint:    "Milliseconds of silence before inserting a period. Default: 1500",
+        scope:   "client",
+        config:  true,
+        type:    Number,
+        default: 1500,
+        range:   { min: 500, max: 5000, step: 100 }
+    });
+
+    game.settings.register(MODULE_ID, "longPauseMs", {
+        name:    "Long Pause Duration (ms)",
+        hint:    "Milliseconds of silence before inserting a paragraph break. Default: 3000",
+        scope:   "client",
+        config:  true,
+        type:    Number,
+        default: 3000,
+        range:   { min: 1000, max: 10000, step: 100 }
+    });
 });
 
 // ── Ready ──
@@ -205,9 +162,9 @@ Hooks.once("ready", () => {
         }
     });
 
+    game.npcAgent = new NPCAgent();
+
     if (game.user.isGM) {
-        game.npcAgent = new NPCAgent();
-        // Always attempt initial connection on startup
         game.npcAgent.connect();
     }
 });
