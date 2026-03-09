@@ -175,6 +175,26 @@ Hooks.once("init", () => {
         type:       NPCAgentConnectionManager,
         restricted: true
     });
+	
+	game.settings.register(MODULE_ID, "shortPauseMs", {
+		name:  "Short Pause Duration (ms)",
+		hint:  "Milliseconds of silence before inserting a period. Default: 1500",
+		scope: "client",   // client scope = per player, not shared
+		config: true,
+		type:  Number,
+		default: 1500,
+		range: { min: 500, max: 5000, step: 100 }
+	});
+
+	game.settings.register(MODULE_ID, "longPauseMs", {
+		name:  "Long Pause Duration (ms)",
+		hint:  "Milliseconds of silence before inserting a paragraph break. Default: 3000",
+		scope: "client",
+		config: true,
+		type:  Number,
+		default: 3000,
+		range: { min: 1000, max: 10000, step: 100 }
+	});
 });
 
 // ── Ready ──

@@ -1,0 +1,290 @@
+const MODULE_ID = "npc-agent";
+const player    = game.user.name;
+const profile   = "Riko";
+
+const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+let listening       = false;
+let recognition     = null;
+let accumulatedText = "";
+let interimText     = "";
+let committed       = false;  // prevents any update after final commit
+
+new Dialog({
+    title: "Talk to NPC",
+    content: `
+    <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0;">
+        <label>Message</label>
+        <textarea id="npc-message" rows="4"
+            style="width:100%; resize:vertical;"
+            placeholder="Type or use push-to-talk..."></textarea>
+        ${hasSpeech ? `
+        <div style="display:flex; align-items:center; gap:10px;">
+            <button id="npc-ptt" type="button"
+                style="padding:6px 14px; cursor:pointer;">
+                🎤 Hold to Talk
+            </button>
+            <div id="npc-status" style="
+                width: 12px; height: 12px;
+                border-radius: 50%;
+                background: #27ae60;
+                box-shadow: 0 0 5px #27ae60;
+                transition: background 0.2s, box-shadow 0.2s;
+                flex-shrink: 0;
+            "></div>
+        </div>` : ''}
+    </div>
+    `,
+    buttons: {
+        send: {
+            label: "Send",
+            callback: (html) => {
+                const message = html.find("#npc-message").val().trim();
+                if (!message) {
+                    ui.notifications.warn("Please enter a message.");
+                    return;
+                }
+                if (game.user.isGM) {
+                    game.npcAgent.sendMessage(player, profile, message);
+                } else {
+                    game.socket.emit(`module.${MODULE_ID}`, {
+                        player, profile, message
+                    });
+                }
+                ui.notifications.info("Message sent. Waiting for response...");
+            }
+        },
+        cancel: { label: "Cancel" }
+    },
+    default: "send",
+    render: (html) => {
+        if (!hasSpeech) return;
+
+        const textarea  = html.find("#npc-message")[0];
+        const pttBtn    = html.find("#npc-ptt")[0];
+        const statusDot = html.find("#npc-status")[0];
+
+        const shortPauseMs = game.settings.get(MODULE_ID, "shortPauseMs");
+        const longPauseMs  = game.settings.get(MODULE_ID, "longPauseMs");
+
+        let pauseTimer     = null;
+        let silenceStart   = null;
+        let periodInserted = false;
+		let stopTimeout = null;
+
+        // ── Helpers ──
+        function capitalize(str) {
+            if (!str) return str;
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function applyCapitalization(text) {
+            return text
+                .split("\n\n")
+                .map(para =>
+                    para.split(". ")
+                        .map(s => capitalize(s.trim()))
+                        .join(". ")
+                )
+                .join("\n\n");
+        }
+
+        function appendToAccumulated(text) {
+            if (!text) return;
+            if (accumulatedText.endsWith("\n\n")) {
+                accumulatedText = accumulatedText + text.trim();
+            } else if (accumulatedText.trimEnd()) {
+                accumulatedText = `${accumulatedText.trimEnd()} ${text.trim()}`;
+            } else {
+                accumulatedText = text.trim();
+            }
+        }
+
+        function addFinalPeriod() {
+            if (accumulatedText
+                && !accumulatedText.trimEnd().endsWith(".")
+                && !accumulatedText.trimEnd().endsWith("?")
+                && !accumulatedText.trimEnd().endsWith("!")
+                && !accumulatedText.endsWith("\n\n")) {
+                accumulatedText = accumulatedText.trimEnd() + ".";
+            }
+        }
+
+        function commitToTextarea() {
+            if (committed) return;  // never write after final commit
+            committed = true;
+            addFinalPeriod();
+            if (accumulatedText) {
+                textarea.value = applyCapitalization(accumulatedText);
+            }
+        }
+
+        function setStatus(state) {
+            const states = {
+                ready:     { bg: "#27ae60", shadow: "#27ae60" },
+                listening: { bg: "#c0392b", shadow: "#c0392b" },
+                cooldown:  { bg: "#f39c12", shadow: "#f39c12" }
+            };
+            const s = states[state];
+            statusDot.style.background = s.bg;
+            statusDot.style.boxShadow  = `0 0 5px ${s.shadow}`;
+        }
+
+        // ── Pause timer ──
+        function clearPauseTimer() {
+            if (pauseTimer) {
+                clearTimeout(pauseTimer);
+                pauseTimer = null;
+            }
+        }
+
+        function schedulePauseCheck() {
+            clearPauseTimer();
+            silenceStart   = Date.now();
+            periodInserted = false;
+
+            pauseTimer = setTimeout(() => {
+                if (!periodInserted
+                    && accumulatedText
+                    && !accumulatedText.trimEnd().endsWith(".")
+                    && !accumulatedText.endsWith("\n\n")) {
+                    accumulatedText = accumulatedText.trimEnd() + ".  ";
+                    periodInserted  = true;
+                    if (!committed) textarea.value = applyCapitalization(accumulatedText);
+                }
+
+                const remaining = longPauseMs - (Date.now() - silenceStart);
+                pauseTimer = setTimeout(() => {
+                    if (accumulatedText && !accumulatedText.endsWith("\n\n")) {
+                        accumulatedText = accumulatedText.trimEnd()
+                            .replace(/\.\s*$/, "") + ".\n\n";
+                        periodInserted = false;
+                        if (!committed) textarea.value = applyCapitalization(accumulatedText);
+                    }
+                    pauseTimer = null;
+                }, Math.max(remaining, 0));
+
+            }, shortPauseMs);
+        }
+
+        // ── Recognition ──
+        function buildRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const r          = new SpeechRecognition();
+            r.lang           = "en-US";
+            r.interimResults = true;
+            r.continuous     = true;
+            r.maxAlternatives = 1;
+
+            r.onresult = (event) => {
+                if (committed) return;  // ignore results after final commit
+
+                interimText = "";
+                let newFinal = "";
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        newFinal += event.results[i][0].transcript;
+                    } else {
+                        interimText += event.results[i][0].transcript;
+                    }
+                }
+
+                if (newFinal) {
+                    appendToAccumulated(newFinal);
+                    interimText = "";
+                }
+
+                textarea.value = applyCapitalization(accumulatedText);
+
+                if (interimText) {
+                    periodInserted = false;
+                    schedulePauseCheck();
+                }
+            };
+
+            r.onerror = (event) => {
+                if (event.error === "no-speech" || event.error === "aborted") return;
+                console.error(`${MODULE_ID} | Speech error: ${event.error}`);
+            };
+
+            r.onend = () => {
+                if (listening) {
+                    // Button still held — restart
+                    if (interimText && !committed) {
+                        appendToAccumulated(interimText);
+                        interimText = "";
+                        textarea.value = applyCapitalization(accumulatedText);
+                    }
+                    recognition = buildRecognition();
+                    recognition.start();
+                } else {
+                    // Button released — recognition has fully stopped
+                    recognition = null;
+                    // commitToTextarea is already done in stopListening
+                    // but call again as safety net in case a late result fired
+                    if (!committed) commitToTextarea();
+                }
+            };
+
+            return r;
+        }
+
+        // ── Controls ──
+		function startListening() {
+			if (stopTimeout) {
+				clearTimeout(stopTimeout);  // cancel any pending stop
+				stopTimeout = null;
+			}
+			if (listening) return;
+			
+			listening       = true;
+			committed       = false;
+			accumulatedText = textarea.value.trim();
+			interimText     = "";
+			periodInserted  = false;
+			setStatus("listening");
+			recognition = buildRecognition();
+			recognition.start();
+		}
+			
+		function stopListening() {
+			if (!listening) return;
+
+			// Grace period — wait briefly before actually stopping
+			// catches trailing words when button is released mid-syllable
+			stopTimeout = setTimeout(() => {
+				if (!listening) return;  // already stopped by another path
+				listening = false;
+				clearPauseTimer();
+
+				if (interimText) {
+					appendToAccumulated(interimText);
+					interimText = "";
+				}
+
+				commitToTextarea();
+
+				if (recognition) recognition.stop();
+
+				accumulatedText = "";
+				pttBtn.disabled = true;
+				setStatus("cooldown");
+
+				setTimeout(() => {
+					pttBtn.disabled = false;
+					setStatus("ready");
+				}, 1000);
+			}, 400);  // 400ms grace period — adjust to taste
+		}
+
+		// Mouse events
+		pttBtn.addEventListener("mousedown",  (e) => { e.preventDefault(); startListening(); });
+		pttBtn.addEventListener("mouseup",    () => stopListening());
+		pttBtn.addEventListener("mouseleave", () => { if (listening) stopListening(); });
+
+		// Touch events
+		pttBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startListening(); });
+		pttBtn.addEventListener("touchend",   (e) => { e.preventDefault(); stopListening(); });
+    }
+}).render(true);
