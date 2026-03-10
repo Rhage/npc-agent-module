@@ -1,10 +1,11 @@
 import { MODULE_ID, SOCKET_ID } from "./constants.js";
 	
 export class NPCAgentDialog extends Application {
-    constructor(profile, options = {}) {
-        super(options);
-        this.profile = profile;
-        this.player  = game.user.name;
+	constructor(profile, player = game.user.name, userId = game.user.id, options = {}) {
+		super(options);
+		this.profile = profile;
+		this.player  = player;
+		this.userId  = userId;
 
         // Speech state
         this._listening       = false;
@@ -18,15 +19,18 @@ export class NPCAgentDialog extends Application {
         this._stopTimeout     = null;
     }
 
-    static get defaultOptions() {
-        return foundry.utils.mergeObject(super.defaultOptions, {
-            id:       "npc-agent-dialog",
-            title:    "Talk to NPC",
-            width:    400,
-            height:   "auto",
-            resizable: false
-        });
-    }
+	static get defaultOptions() {
+		return foundry.utils.mergeObject(super.defaultOptions, {
+			id:       "npc-agent-dialog",
+			width:    400,
+			height:   "auto",
+			resizable: false
+		});
+	}
+
+	get title() {
+		return `${this.player} speaking with ${this.profile}`;
+	}
 
     // ── Helpers ──
 
@@ -281,15 +285,16 @@ export class NPCAgentDialog extends Application {
                 ui.notifications.warn("Please enter a message.");
                 return;
             }
-            if (game.user.isGM) {
-                game.npcAgent.sendMessage(this.player, this.profile, message);
-            } else {
-                game.socket.emit(SOCKET_ID, {
-                    player:  this.player,
-                    profile: this.profile,
-                    message
-                });
-            }
+			if (game.user.isGM) {
+				game.npcAgent.sendMessage(this.player, this.profile, message, this.userId);
+			} else {
+				game.socket.emit(SOCKET_ID, {
+					player:  this.player,
+					profile: this.profile,
+					message,
+					userId:  this.userId
+				});
+			}
             ui.notifications.info("Message sent. Waiting for response...");
             this.close();
         });
