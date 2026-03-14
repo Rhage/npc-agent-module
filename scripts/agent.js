@@ -61,13 +61,11 @@ class NPCAgent {
 		if (data.type === "agent_response") {
 			const actor      = game.actors.getName(data.profile);
 			const formatted  = data.response.replace(/\n/g, "<br>");
-
-			// Find the user who owns the speaker actor
 			const targetUser = game.users.get(data.userId);
-			
+
 			ChatMessage.create({
 				content: formatted,
-				type:    CONST.CHAT_MESSAGE_TYPES.IC,
+				type:    CONST.CHAT_MESSAGE_STYLES.IC,
 				user:    targetUser?.id ?? game.user.id,
 				speaker: actor
 					? ChatMessage.getSpeaker({ actor })
@@ -75,6 +73,16 @@ class NPCAgent {
 			}, {
 				chatBubble: true
 			});
+
+			// Play voice audio for all players if provided
+			if (data.audio_src) {
+				AudioHelper.play({
+					src:      data.audio_src,
+					volume:   1.0,
+					autoplay: true,
+					loop:     false
+				}, true);  // true = push to all connected players
+			}
 		}
 
 		if (data.type === "error") {
@@ -87,6 +95,19 @@ class NPCAgent {
 			ui.notifications.warn("NPC Agent is not connected.");
 			return;
 		}
+		// Find the user who owns the speaker actor
+		const targetUser = game.users.get(userId);
+
+		console.log(player);
+		ChatMessage.create({
+			content: message,
+			type:    CONST.CHAT_MESSAGE_STYLES.IC,
+			user: targetUser?.id ?? game.user.id,
+			speaker: ChatMessage.getSpeaker({actor: game.actors.getName(player)})
+		}, {
+			chatBubble: true
+		});
+
 		this.ws.send(JSON.stringify({
 			type:    "player_message",
 			player,
