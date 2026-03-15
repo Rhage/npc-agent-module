@@ -120,8 +120,13 @@ class NPCAgent {
 	openDialog(profile, player = game.user.name, userId = game.user.id) {
 		const existing = Object.values(ui.windows).find(w => w.id === "npc-agent-dialog");
 		if (existing) {
-			existing.bringToTop();
-			return;
+			// If it's the same profile, just bring it forward
+			if (existing.profile === profile) {
+				existing.bringToTop();
+				return;
+			}
+			// Different NPC — close the old one and open fresh
+			existing.close();
 		}
 		new NPCAgentDialog(profile, player, userId).render(true);
 	}

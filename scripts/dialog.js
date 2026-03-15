@@ -174,6 +174,31 @@ export class NPCAgentDialog extends Application {
 
         r.onerror = (event) => {
             if (event.error === "no-speech" || event.error === "aborted") return;
+
+            if (event.error === "network") {
+                ui.notifications.warn(
+                    "Voice input unavailable: could not reach speech recognition service. " +
+                    "If using Brave, try disabling Shields for this site."
+                );
+                // Disable the PTT button so it's clear it won't work this session
+                const pttBtn = document.getElementById("npc-ptt");
+                if (pttBtn) {
+                    pttBtn.disabled = true;
+                    pttBtn.title = "Voice input unavailable in this browser";
+                }
+                return;
+            }
+
+            if (event.error === "not-allowed") {
+                ui.notifications.warn("Voice input blocked: microphone permission was denied.");
+                const pttBtn = document.getElementById("npc-ptt");
+                if (pttBtn) {
+                    pttBtn.disabled = true;
+                    pttBtn.title = "Microphone permission denied";
+                }
+                return;
+            }
+
             console.error(`${MODULE_ID} | Speech error: ${event.error}`);
         };
 
