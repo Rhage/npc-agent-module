@@ -90,7 +90,7 @@ class NPCAgent {
 		}
 	}
 
-	sendMessage(player, profile, message, userId = game.user.id) {
+	sendMessage(player, profile, message, userId = game.user.id, visibleActors = []) {
 		if (!this.connected) {
 			ui.notifications.warn("NPC Agent is not connected.");
 			return;
@@ -98,7 +98,6 @@ class NPCAgent {
 		// Find the user who owns the speaker actor
 		const targetUser = game.users.get(userId);
 
-		console.log(player);
 		ChatMessage.create({
 			content: message,
 			type:    CONST.CHAT_MESSAGE_STYLES.IC,
@@ -109,24 +108,20 @@ class NPCAgent {
 		});
 
 		this.ws.send(JSON.stringify({
-			type:    "player_message",
+			type:          "player_message",
 			player,
 			profile,
 			message,
-			userId
+			userId,
+			visibleActors
 		}));
 	}
 
 	openDialog(profile, player = game.user.name, userId = game.user.id) {
 		const existing = Object.values(ui.windows).find(w => w.id === "npc-agent-dialog");
 		if (existing) {
-			// If it's the same profile, just bring it forward
-			if (existing.profile === profile) {
-				existing.bringToTop();
-				return;
-			}
-			// Different NPC — close the old one and open fresh
-			existing.close();
+			existing.bringToTop();
+			return;
 		}
 		new NPCAgentDialog(profile, player, userId).render(true);
 	}
@@ -248,7 +243,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
 	game.socket.on(SOCKET_ID, (data) => {
 		if (game.user.isGM) {
-			game.npcAgent.sendMessage(data.player, data.profile, data.message, data.userId);
+			game.npcAgent.sendMessage(data.player, data.profile, data.message, data.userId, data.visibleActors || []);
 		}
 	});
 

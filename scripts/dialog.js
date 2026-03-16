@@ -174,31 +174,6 @@ export class NPCAgentDialog extends Application {
 
         r.onerror = (event) => {
             if (event.error === "no-speech" || event.error === "aborted") return;
-
-            if (event.error === "network") {
-                ui.notifications.warn(
-                    "Voice input unavailable: could not reach speech recognition service. " +
-                    "If using Brave, try disabling Shields for this site."
-                );
-                // Disable the PTT button so it's clear it won't work this session
-                const pttBtn = document.getElementById("npc-ptt");
-                if (pttBtn) {
-                    pttBtn.disabled = true;
-                    pttBtn.title = "Voice input unavailable in this browser";
-                }
-                return;
-            }
-
-            if (event.error === "not-allowed") {
-                ui.notifications.warn("Voice input blocked: microphone permission was denied.");
-                const pttBtn = document.getElementById("npc-ptt");
-                if (pttBtn) {
-                    pttBtn.disabled = true;
-                    pttBtn.title = "Microphone permission denied";
-                }
-                return;
-            }
-
             console.error(`${MODULE_ID} | Speech error: ${event.error}`);
         };
 
@@ -310,16 +285,30 @@ export class NPCAgentDialog extends Application {
                 ui.notifications.warn("Please enter a message.");
                 return;
             }
-			if (game.user.isGM) {
-				game.npcAgent.sendMessage(this.player, this.profile, message, this.userId);
-			} else {
-				game.socket.emit(SOCKET_ID, {
-					player:  this.player,
-					profile: this.profile,
-					message,
-					userId:  this.userId
-				});
-			}
+
+            // Collect actors visible to the NPC token
+            const npcToken      = canvas.tokens.placeables.find(t => t.actor?.name === this.profile);
+            const visibleActors = npcToken
+                ? canvas.tokens.placeables
+                    .filter(t =>
+                        t.id !== npcToken.id &&
+                        canvas.visibility.testVisibility(t.center, { object: npcToken })
+                    )
+                    .map(t => t.actor?.name)
+                    .filter(Boolean)
+                : [];
+
+            if (game.user.isGM) {
+                game.npcAgent.sendMessage(this.player, this.profile, message, this.userId, visibleActors);
+            } else {
+                game.socket.emit(SOCKET_ID, {
+                    player:        this.player,
+                    profile:       this.profile,
+                    message,
+                    userId:        this.userId,
+                    visibleActors
+                });
+            }
             ui.notifications.info("Message sent. Waiting for response...");
             this.close();
         });
