@@ -22,7 +22,7 @@ export class NPCAgentDialog extends Application {
 	static get defaultOptions() {
 		return foundry.utils.mergeObject(super.defaultOptions, {
 			id:       "npc-agent-dialog",
-			width:    400,
+			width:    680,
 			height:   "auto",
 			resizable: false
 		});
@@ -247,31 +247,57 @@ export class NPCAgentDialog extends Application {
     async _renderInner() {
         const hasSpeech = this._hasSpeech();
 
+        const speakerActor = game.actors?.find(a => a.name === this.player);
+        const speakerImg   = speakerActor?.img ?? null;
+        const speakerBlock = speakerImg ? `
+            <div id="npc-portrait-speaker" style="flex-shrink:0; width:150px; height:150px;
+                        align-self:flex-start; overflow:hidden;
+                        border-radius:4px; border:1px solid rgba(255,255,255,0.2);">
+                <img src="${speakerImg}" alt="${this.player}"
+                    style="width:100%; height:100%; display:block;
+                           object-fit:cover; object-position:top;" />
+            </div>` : "";
+
+        const targetActor = game.actors?.find(a => a.name === this.profile);
+        const targetImg   = targetActor?.img;
+        const targetBlock = targetImg ? `
+            <div id="npc-portrait-target" style="flex-shrink:0; width:150px; height:150px;
+                        align-self:flex-start; overflow:hidden;
+                        border-radius:4px; border:1px solid rgba(255,255,255,0.2);">
+                <img src="${targetImg}" alt="${this.profile}"
+                    style="width:100%; height:100%; display:block;
+                           object-fit:cover; object-position:top;" />
+            </div>` : "";
+
         const $html = $(`
-            <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0;">
-                <label>Message</label>
-                <textarea id="npc-message" rows="4"
-                    style="width:100%; resize:vertical;"
-                    placeholder="Type or use push-to-talk..."></textarea>
-                ${hasSpeech ? `
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <button id="npc-ptt" type="button"
-                        style="padding:6px 14px; cursor:pointer;">
-                        🎤 Hold to Talk
-                    </button>
-                    <div id="npc-status" style="
-                        width: 12px; height: 12px;
-                        border-radius: 50%;
-                        background: #27ae60;
-                        box-shadow: 0 0 5px #27ae60;
-                        transition: background 0.2s, box-shadow 0.2s;
-                        flex-shrink: 0;
-                    "></div>
-                </div>` : ""}
-                <div style="display:flex; gap:8px; margin-top:4px;">
-                    <button id="npc-send">Send</button>
-                    <button id="npc-cancel">Cancel</button>
+            <div style="display:flex; flex-direction:row; gap:10px; padding:4px 0;">
+                ${speakerBlock}
+                <div id="npc-form-col" style="display:flex; flex-direction:column; gap:8px; flex:1; min-width:0;">
+                    <label>Message</label>
+                    <textarea id="npc-message" rows="4"
+                        style="width:100%; resize:vertical;"
+                        placeholder="Type or use push-to-talk..."></textarea>
+                    ${hasSpeech ? `
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <button id="npc-ptt" type="button"
+                            style="padding:6px 14px; cursor:pointer;">
+                            🎤 Hold to Talk
+                        </button>
+                        <div id="npc-status" style="
+                            width: 12px; height: 12px;
+                            border-radius: 50%;
+                            background: #27ae60;
+                            box-shadow: 0 0 5px #27ae60;
+                            transition: background 0.2s, box-shadow 0.2s;
+                            flex-shrink: 0;
+                        "></div>
+                    </div>` : ""}
+                    <div style="display:flex; gap:8px; margin-top:4px;">
+                        <button id="npc-send">Send</button>
+                        <button id="npc-cancel">Cancel</button>
+                    </div>
                 </div>
+                ${targetBlock}
             </div>
         `);
 
@@ -327,6 +353,23 @@ export class NPCAgentDialog extends Application {
         }
 
         return $html;
+    }
+
+    // ── Post-render portrait sizing ──
+
+    activateListeners(html) {
+        super.activateListeners(html);
+        const formCol = html.find("#npc-form-col")[0];
+        if (!formCol) return;
+        const h = formCol.offsetHeight;
+        if (h <= 0) return;
+        for (const id of ["#npc-portrait-speaker", "#npc-portrait-target"]) {
+            const el = html.find(id)[0];
+            if (el) {
+                el.style.width  = `${h}px`;
+                el.style.height = `${h}px`;
+            }
+        }
     }
 
     // ── Cleanup ──

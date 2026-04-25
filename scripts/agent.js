@@ -4,9 +4,66 @@ import { NPCAgentDialog } from "./dialog.js";
 
 class NPCAgent {
     constructor() {
-        this.ws         = null;
-        this.connected  = false;
-        this.manualStop = false;
+        this.ws              = null;
+        this.connected       = false;
+        this.manualStop      = false;
+        this._responseQueue  = [];
+        this._responseActive = false;
+    }
+
+    _enqueueResponse(data) {
+        this._responseQueue.push(data);
+        if (!this._responseActive) this._drainResponseQueue();
+    }
+
+    async _drainResponseQueue() {
+        this._responseActive = true;
+        try {
+            while (this._responseQueue.length > 0) {
+                const data = this._responseQueue.shift();
+                try {
+                    await this._deliverResponse(data);
+                } catch (err) {
+                    console.error(`${MODULE_ID} | Response delivery error:`, err);
+                }
+            }
+        } finally {
+            this._responseActive = false;
+        }
+    }
+
+    async _deliverResponse(data) {
+        const actor      = game.actors.getName(data.profile);
+        const formatted  = data.response.replace(/\n/g, "<br>");
+        const targetUser = game.users.get(data.userId);
+
+        ChatMessage.create({
+            content: formatted,
+            type:    CONST.CHAT_MESSAGE_STYLES.IC,
+            user:    targetUser?.id ?? game.user.id,
+            speaker: actor
+                ? ChatMessage.getSpeaker({ actor })
+                : { alias: data.profile }
+        }, {
+            chatBubble: true
+        });
+
+        if (!data.audio_src) return;
+
+        const sound = await AudioHelper.play({
+            src:      data.audio_src,
+            volume:   1.0,
+            autoplay: true,
+            loop:     false
+        }, true);  // true = push to all connected players
+        if (!sound) return;
+
+        await new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            sound.addEventListener("end",  finish, { once: true });
+            sound.addEventListener("stop", finish, { once: true });
+        });
     }
 
     connect() {
@@ -59,30 +116,9 @@ class NPCAgent {
 
 	handleMessage(data) {
 		if (data.type === "agent_response") {
-			const actor      = game.actors.getName(data.profile);
-			const formatted  = data.response.replace(/\n/g, "<br>");
-			const targetUser = game.users.get(data.userId);
-
-			ChatMessage.create({
-				content: formatted,
-				type:    CONST.CHAT_MESSAGE_STYLES.IC,
-				user:    targetUser?.id ?? game.user.id,
-				speaker: actor
-					? ChatMessage.getSpeaker({ actor })
-					: { alias: data.profile }
-			}, {
-				chatBubble: true
-			});
-
-			// Play voice audio for all players if provided
-			if (data.audio_src) {
-				AudioHelper.play({
-					src:      data.audio_src,
-					volume:   1.0,
-					autoplay: true,
-					loop:     false
-				}, true);  // true = push to all connected players
-			}
+			// Chat + audio are delivered together via a single queue so
+			// back-to-back responses don't overlap and text stays in sync with voice.
+			this._enqueueResponse(data);
 		}
 
 		if (data.type === "error") {
